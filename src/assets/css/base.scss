@@ -1,0 +1,16 @@
+html, body, h1, h2, h3, h4, h5, p, div, ul, li, ol {
+  margin: 0;
+  padding: 0;
+  font-size: 14px;
+}
+
+ul {
+  list-style: none;
+}
+
+.g_page-container {
+  padding: 0 20px;
+  min-width: 330px;
+  max-width: 1000px;
+  margin: 0 auto;
+}

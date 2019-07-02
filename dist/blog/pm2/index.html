@@ -1,0 +1,456 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.jpg"><title>yaoyanhuo</title><link href="/css/app.58335f96.css" rel="preload" as="style"><link href="/js/app.b91e7a8f.js" rel="preload" as="script"><link href="/js/chunk-vendors.e863a954.js" rel="preload" as="script"><link href="/css/app.58335f96.css" rel="stylesheet"></head><body><noscript><strong>We're sorry but yaoyanhuo doesn't work properly without JavaScript enabled. Please enable it to continue.</strong></noscript><div id="app"><div class="head"><div class="head-inner g_page-container"><a href="/" class="router-link-active"><img src="/img/head.jpg"></a><div class="info"><h1 class="name">Yaoyanhuo 妖艳货</h1><span>Be a simple programmer. </span></div></div></div><div><div class="blog-detail g_page-container"><div class="markdown-body"><div class="markdown-to-vue-loader"><h1 id="pm2-高级的进程管理工具（node）">PM2 高级的进程管理工具（Node）</h1><p><em>posted by yaoyanhuo on 2019-03-04, last updated on 2019-03-06</em></p><blockquote><p>管理 Node 服务的一把手，支持代码变化监听，进程集群，负载平衡，日志管理，统一管理进程服务等功能。本文除开 pm2 基本描述，主要会对常用命令进行详细分析，看看各个命令到底是如何工作。还有 pm2 使用过程中经常遇到的问题进行剖析，比如：CPU 只有一个，只能启动的进程集群只能是 1 个，那还能实现 0 秒重载吗？答案是：能。赶紧来领略一下pm2的强大吧。</p></blockquote><h2 id="pm2-功能">PM2 功能</h2><ul><li><code>pm2</code> 启动 Node 服务后，可以监听文件变更，并迅速重启</li><li><code>pm2</code> 支持负载平衡，可以根据 CPU 核数启动多个进程，成为一个进程集群</li><li>启动的集群服务，可实现 0 秒重载，因其重载时集群中至少有一个进程在运行</li><li><code>pm2</code> 有日志管理，可随时查看进程输出结果</li><li>执行 <code>node server</code> 这类命令后，一般会一直运行在控制台，<code>pm2</code> 则是在后台运行，当前控制台可继续执行其它命令</li><li>除了 <code>cli</code>模式，还有 <code>pm2</code> 生态系统文件 <code>ecosystem.config.js</code>，文件可同时配置多个应用服务，具体配置参见 附录3</li></ul><h2 id="pm2-安装">PM2 安装</h2><pre><code>npm install pm2 -g</code></pre><p>如果安装失败，使用 <code>npm config list</code> 查看 npm 代理和仓库地址，有些公司内部出于安全考虑可能需要设置一些代理才能访问外网，检查代理是否正确；再看仓库，由于 npm 本身的仓库比较慢，建议使用国内镜像：<a href="https://npm.taobao.org/">https://npm.taobao.org/</a> ，或自己公司搭建的仓库。以淘宝镜像为例，设置仓库地址 <code>npm config set registry http://registry.npm.taobao.org/</code> 和 使用 <code>cnpm</code> 本质都是从 <a href="http://registry.npm.taobao.org">http://registry.npm.taobao.org</a> 拉包。</p><h2 id="pm2-名词解释">PM2 名词解释</h2><table><thead><tr><th>名称</th><th>描述</th></tr></thead><tbody><tr><td>App name</td><td>node 进程服务名称，pm2 启动服务会有一个名称，有默认值，可自定义，在服务启动后的一系列操作都通过该名称进行</td></tr><tr><td>id</td><td>pm2 进程 id，唯一标识 pm2 进程，即使同一集群，名称相同，id 也不会相同，在进程被 delete 之前，无论 <code>pm2 start</code> 或 <code>pm2 stop</code>，id 都不变</td></tr><tr><td>pid</td><td>每次启动 pid 都会发生变化，是进程执行时 id。进程被 stop 后，其值为 0</td></tr><tr><td>watch</td><td>是否监听文件变化自动重启，一般建议开发时使用，节约资源</td></tr><tr><td>status</td><td>进程运行状态，值为 online/stopped 等</td></tr><tr><td>mode</td><td>进程模式，可能值 <code>cluster</code>/<code>fork</code>。前者表示进程集群，即在不同的 CPU 线程里开启相同的进程；后者表示单个进程</td></tr><tr><td>ecosystem.config.js</td><td>生态系统配置文件，pm2 可以直接在<code>cli</code>中添加参数，也可以在该文件中进行配置。该文件可一次性配置多个应用，使用 <code>pm2 start ecosystem.config.js</code> 统一启动，关系类似于 webpack-dev-server 和 devServer 配置项。配置示例参看 附录3</td></tr><tr><td>进程集群</td><td>相同代码运行在同一端口的多个进程归为一个集群，使用集群模式 pm2 可以实现 0 秒重载</td></tr></tbody></table><h2 id="pm2-常用命令合集">PM2 常用命令合集</h2><p>先看看整体命令集合，了解各自大概是干什么的，后文会有各个命令的功能详述。以下内容，<code>app</code> 为应用名称。</p><table><thead><tr><th>命令示例</th><th>描述</th></tr></thead><tbody><tr><td>pm2 start app</td><td>启动单个应用，其中 app 是指脚本路径，即 <code>app/index.js</code>，应用启动可以通过 <code>cli</code> 参数配置很多自定义内容，如 自定义名称，是否监听文件变化，日志如何显示等。如果自定内容较多建议使用 <code>ecosystem.config.js</code> 一起配置</td></tr><tr><td>pm2 start app --watch</td><td>启动单个应用并监听代码变化</td></tr><tr><td>pm2 start server --name server_pre</td><td>启动单个应用并自定义应用名称</td></tr><tr><td>pm2 start app --log-date-format="YYYY-MM-DD HH:mm:ss"</td><td>日志参数打印时带上日期，日期格式参看 <code>moment.js</code></td></tr><tr><td>pm2 restart app --update-env --watch disabled</td><td>重启单个应用，更新参数</td></tr><tr><td>pm2 start app -i max</td><td>负载平衡，开启 <code>max</code> 个相同的服务，<code>max</code> 数量等于 CPU 可执行的线程数，其值可为任意数字， <code>pm2 start app -i 3</code>。该命令启动的进程为进程集群，模式 <code>mode</code> 值为  <code>cluster</code></td></tr><tr><td>pm2 show app</td><td>通过名称查看进程详细信息，<code>pm2 show &lt;id&gt;</code>同理，包含：名称、版本、重启次数、脚本路径、端口号、日志路径、环境变量、创建时间、git 相关信息</td></tr><tr><td>pm2 delete app</td><td>根据名称删除应用进程</td></tr><tr><td>pm2 delete all</td><td>删除所有应用进程</td></tr><tr><td>pm2 delete 0</td><td>根据 id 删除应用进程</td></tr><tr><td>pm2 list</td><td>查看进程列表</td></tr><tr><td>pm2 reload all</td><td>0 秒停机重载所有进程，仅对集群进程有用，本质是重载的时候保证至少一个同名进程在正常运行。</td></tr><tr><td>pm2 reload app</td><td>0 秒停机重载某一集群进程，仅对集群进程有用</td></tr><tr><td>pm2 stop all</td><td>停止所有进程</td></tr><tr><td>pm2 stop app</td><td>根据名称停止某一进程</td></tr><tr><td>pm2 stop 3</td><td>根据 id 停止某一进程</td></tr><tr><td>pm2 startup</td><td>检测计算机上可用的 init 系统并生成配置</td></tr><tr><td>pm2 monit</td><td>了解每个进程的 CPU 使用情况，内存使用情况，环路延迟或请求/分钟</td></tr><tr><td>pm2 logs</td><td>查看所有进程日志，日志路径会在命令执行后输出到控制台</td></tr><tr><td>pm2 logs app</td><td>查看具体应用进程 app 的日志， <code>pm2 logs app --lines 1000</code> 可以看执行数日志</td></tr><tr><td>pm2 flush</td><td>清除进程列表中的所有进程应用日志，无论其状态为 <code>online</code> 还是 <code>stopped</code>。但不在进程列表中的死进程，其日志不会被清除，如：执行了 <code>pm2 delete app</code> 的 app 进程。清除操作仅仅是清空文件，不会删除文件。</td></tr><tr><td>pm2 env 0</td><td>显示当前环境变量信息</td></tr></tbody></table><p>更多 <code>cli</code> 参考： <a href="https://pm2.io/doc/zh/runtime/reference/pm2-cli/">https://pm2.io/doc/zh/runtime/reference/pm2-cli/</a></p><h2 id="生态系统文件-ecosystemconfigjs">生态系统文件 ecosystem.config.js</h2><p>为满足需求，以上命令执行过程中可能会添加多个参数，如果需要的参数较多，直接书写命令就不是很方便，别担心，咱们还有生态系统文件，可以把所需的任何参数都配置在里面，启动的时候，运行这个文件就可以啦。如，使用 <code>pm2 start ecosystem.config.js</code> 启动所有服务，使用 <code>pm2 start ecosystem.config.js --only app</code> 仅启动名为 <code>app</code> 的 服务。</p><p>使用配置项和命令行的参数命名规则一般是：<code>cli</code> 命令参数为中划线，配置项为下划线。如 <code>--log-date-format</code> 对应配置项为 <code>log_date_format</code>。</p><p>配置示例：</p><pre><code>module<span class="token punctuation">.</span>exports <span class="token operator">=</span> <span class="token punctuation">{</span>
+  apps <span class="token punctuation">:</span> <span class="token punctuation">[</span><span class="token punctuation">{</span>
+    <span class="token comment">// 基本配置</span>
+    name<span class="token punctuation">:</span> <span class="token string">'app'</span><span class="token punctuation">,</span>  <span class="token comment">// 应用名称，默认是 脚本名称</span>
+    cwd<span class="token punctuation">:</span> <span class="token string">'./'</span><span class="token punctuation">,</span> <span class="token comment">// 启动进程所在的当前目录</span>
+    script<span class="token punctuation">:</span> <span class="token string">'app/index.js'</span><span class="token punctuation">,</span> <span class="token comment">// 执行的 node 脚本地址</span>
+    args<span class="token punctuation">:</span> <span class="token string">'3306'</span><span class="token punctuation">,</span> <span class="token comment">// 参数，放在 process.argv 里面，多个参数空格隔开，或使用数组</span>
+    instances<span class="token punctuation">:</span> <span class="token number">5</span><span class="token punctuation">,</span> <span class="token comment">// 启动的进程实例数，如果值 5 ，则会启动一个进程数为 5 的进程集群，等效 `pm2 start app -i 5`</span>
+    autorestart<span class="token punctuation">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span> <span class="token comment">// 是否自动启动</span>
+    watch<span class="token punctuation">:</span> <span class="token boolean">false</span><span class="token punctuation">,</span> <span class="token comment">// 是否监听代码变化，等效 `pm2 start app --watch`</span>
+    max_memory_restart<span class="token punctuation">:</span> <span class="token string">'1G'</span><span class="token punctuation">,</span> <span class="token comment">// 存储超过 1G 就重启</span>
+    interpreter<span class="token punctuation">:</span> <span class="token string">'/usr/web/path/*.exe'</span><span class="token punctuation">,</span> <span class="token comment">// 解析器，用于解析执行 script 脚本</span>
+    pid_file<span class="token punctuation">:</span> <span class="token string">'~/.pm2/pids/app_name-id.pid'</span><span class="token punctuation">,</span> <span class="token operator">/</span><span class="token operator">/</span> 存储 pid 的文件路径
+
+    <span class="token operator">/</span><span class="token operator">/</span> 日志相关配置
+    output<span class="token punctuation">:</span> <span class="token string">''</span><span class="token punctuation">,</span> <span class="token operator">/</span><span class="token regex">/ 正常日志输出路径，默认 ~/</span><span class="token punctuation">.</span>pm2<span class="token operator">/</span>logs<span class="token operator">/</span><span class="token operator">-</span>out<span class="token punctuation">.</span>log，如： <span class="token operator">/</span>data<span class="token operator">/</span>logs<span class="token operator">/</span>pm2<span class="token operator">/</span>app<span class="token operator">-</span>out<span class="token punctuation">.</span>log
+    error<span class="token punctuation">:</span> <span class="token string">''</span><span class="token punctuation">,</span> <span class="token operator">/</span><span class="token regex">/ 错误日志输出路径，默认 ~/</span><span class="token punctuation">.</span>pm2<span class="token operator">/</span>logs<span class="token operator">/</span><span class="token operator">-</span>error<span class="token punctuation">.</span>err，如：<span class="token operator">/</span>data<span class="token operator">/</span>logs<span class="token operator">/</span>pm2<span class="token operator">/</span>app<span class="token operator">-</span>erro<span class="token punctuation">.</span>log
+    log<span class="token punctuation">:</span> <span class="token string">''</span><span class="token punctuation">,</span> <span class="token operator">/</span><span class="token operator">/</span> <span class="token punctuation">[</span>Boolean<span class="token operator">|</span>String<span class="token punctuation">]</span> 默认值 dev<span class="token operator">/</span><span class="token keyword">null</span>
+    disable_logs<span class="token punctuation">:</span> <span class="token boolean">false</span><span class="token punctuation">,</span> <span class="token operator">/</span><span class="token operator">/</span> <span class="token punctuation">[</span>Boolean<span class="token punctuation">]</span> 是否禁用日志
+    log_type<span class="token punctuation">:</span> <span class="token string">'json'</span><span class="token punctuation">,</span> <span class="token operator">/</span><span class="token operator">/</span> 日志输出格式
+    log_date_format<span class="token punctuation">:</span> <span class="token string">''</span><span class="token punctuation">,</span> <span class="token operator">/</span><span class="token operator">/</span>自定义日志中的日期格式，遵循 moment<span class="token punctuation">.</span>js
+    merge_logs<span class="token punctuation">:</span> <span class="token boolean">false</span><span class="token punctuation">,</span> <span class="token operator">/</span><span class="token operator">/</span> 集群模式，是否合并一个集群的进程日志
+
+    min_uptime<span class="token punctuation">:</span> <span class="token number">1000</span><span class="token punctuation">,</span> <span class="token operator">/</span><span class="token operator">/</span> 服务启动的最小时间，默认 <span class="token number">1000</span>
+    max_restarts<span class="token punctuation">:</span> <span class="token number">16</span><span class="token punctuation">,</span> <span class="token operator">/</span><span class="token operator">/</span> 服务重启的最大次数，默认 <span class="token number">16</span> 
+    exec_mode<span class="token punctuation">:</span> <span class="token string">'cluster'</span><span class="token punctuation">,</span> <span class="token operator">/</span><span class="token operator">/</span> 进程模式，可选值：cluster<span class="token operator">/</span>fork
+
+    <span class="token operator">/</span><span class="token operator">/</span> 环境相关配置
+    env<span class="token punctuation">:</span> <span class="token punctuation">{</span>   <span class="token operator">/</span><span class="token operator">/</span> 使用该环境命令 pm2 start ecosystem<span class="token punctuation">.</span>config<span class="token punctuation">.</span>js <span class="token operator">--</span>env
+      <span class="token constant">NODE_ENV</span><span class="token punctuation">:</span> <span class="token string">'development'</span> <span class="token operator">/</span><span class="token operator">/</span> node 环境变量
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    env_production<span class="token punctuation">:</span> <span class="token punctuation">{</span>  <span class="token operator">/</span><span class="token operator">/</span> 使用该环境命令 pm2 start ecosystem<span class="token punctuation">.</span>config<span class="token punctuation">.</span>js <span class="token operator">--</span>env production
+      <span class="token constant">NODE_ENV</span><span class="token punctuation">:</span> <span class="token string">'production'</span>  <span class="token operator">/</span><span class="token operator">/</span> node 环境变量
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">}</span><span class="token punctuation">]</span>
+<span class="token punctuation">}</span></code></pre><p>更多配置项参数参考：<a href="https://pm2.io/doc/en/runtime/reference/ecosystem-file/">https://pm2.io/doc/en/runtime/reference/ecosystem-file/</a></p><h4 id="applications-bchat-not-running">Applications 'bchat' not running</h4><pre><code>[9.56.22.152@root /data/web/websites/.../build]# pm2 start ecosystem.config.js 
+[PM2][WARN] Applications bchat not running, starting...
+[PM2] App [bchat] launched (1 instances)
+┌──────────┬────┬─────────┬─────────┬───────┬────────┬─────────┬────────┬─────┬───────────┬──────┬──────────┐
+│ App name │ id │ version │ mode    │ pid   │ status │ restart │ uptime │ cpu │ mem       │ user │ watching │
+├──────────┼────┼─────────┼─────────┼───────┼────────┼─────────┼────────┼─────┼───────────┼──────┼──────────┤
+│ bchat │ 0  │ 1.0.0   │ cluster │ 19275 │ online │ 0       │ 0s     │ 0%  │ 16.8 MB   │ root │ disabled │
+└──────────┴────┴─────────┴─────────┴───────┴────────┴─────────┴────────┴─────┴───────────┴──────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app
+</code></pre><h2 id="常见问题">常见问题</h2><h3 id="进程相关">进程相关</h3><h4 id="pm2-如何监听代码变化？">pm2 如何监听代码变化？</h4><pre><code>pm2 start app --watch</code></pre><h4 id="pm2-如何配合-npm-run-start-这类命令使用？">pm2 如何配合 <code>npm run start</code> 这类命令使用？</h4><p>直接使用，</p><pre><code>pm2 start npm -- start</code></pre><p>带参数使用，</p><pre><code>pm2 start --name=app -i max npm -- start</code></pre><h4 id="如何开启-pm2-进程集群（cluster）模式？">如何开启 pm2 进程集群（cluster）模式？</h4><p>使用 <code>pm2 start -i max</code> 相关命令启动的服务，默认模式即为集群模式。其中 max 值为可用 CPU 线程数，<code>pm2 start -i -1</code> 表示启动可用 CPU 线程数 - 1 个进程服务。即使 <code>-i</code> 值为 1 ，依旧可以启动集群模式 <code>cluster</code>，进程重载依旧按照集群模式重载。</p><h4 id="pm2-集群模式是如何实现-0-秒重载（pm2-reload-all）的？">pm2 集群模式是如何实现 0 秒重载（pm2 reload all）的？</h4><p>假设当前集群 M 中运行着 4 个进程服务，id 分别为 0, 1, 2, 3。</p><p>先解释下集群中的进程重载运行过程，pm2 先会依次创建新的进程服务 0, 1, 2，可能 0 号还没完全启动，1 号已经开始着手创建（<code>starting</code>），输出创建信息到日志，待 0 号进程创建完成后，pm2 会 <code>stop</code> 旧的 0 号进程（_old_0），最后断掉连接退出 _old_0 号进程，并发出 <code>SIGINT</code> 信号，其它进程也会以相同的运行流程紧随其后。进程的这样一个周期，暂时称它为一个进程的<strong>生命轮回</strong>。</p><p><img src="http://img.yaoyanhuo.com/reload_processor.png" alt="pm2 集群中的进程重载"></p><p>举个例子，当执行 <code>pm2 reload M</code>进程集群重载时，刚好一个请求来到，这时请求会被随机发送到其中一个进程服务中，假设本次是 3 号进程服务收到任务，有两种情况。第一种，3 号进程还未开始轮回；第二种，3 号进程已经开始轮回。对于第一种，简单，直接接收请求并返回，其它进程的轮回同自己无关。对于第二种情况，3 号正在轮回过程中，这时响应请求的艰巨任务就要交给旧的 3 号进程（_old_3）来处理了，待新 3 号生命轮回完成，便开始接手网络请求。</p><p>由此可见，即使集群中只有一个进程也能实现 0s 重载。创建新的进程时，使用旧进程接收请求，新进程创建完毕，使用新进程接收。</p><h3 id="日志相关">日志相关</h3><h4 id="哪些方式可以查看进程日志路径？">哪些方式可以查看进程日志路径？</h4><ul><li><code>pm2 logs</code> 可以查看所有进程日志信息及各个进程日志路径， <code>pm2 logs app</code> 查看<code>app</code>进程日志信息和路径。</li><li><code>pm2 show app</code>可以查看进程所有信息，包括进程日常日志路径、错误日志路径、脚本路径、命令运行路径，甚至 git 相关的信息。</li><li><code>pm2 flush</code> 用于清除进程列表中的所有日志，待日志清除后，会输出日志路径到终端。</li></ul><h4 id="如何添加日期（或日期格式）到日志里面？--log-date-format">如何添加日期（或日期格式）到日志里面？--log-date-format</h4><p><code>cli</code>命令模式，一定记得日格式用双引号，单引号日期格式不被识别。</p><pre><code> pm2 start server --log-date-format "YYYY-MM-DD HH:mm:ss"</code></pre><p><code>ecosystem.config.js</code> 配置如下，</p><pre><code>module.exports = {
+  apps : [{
+    log_date_format: 'YYYY-MM-DD HH:mm:ss'
+  }]
+}</code></pre><h4 id="如何禁用日志？--disable-logs">如何禁用日志？--disable-logs</h4><p><code>cli</code>命令模式，</p><pre><code> pm2 start server --disable-logs</code></pre><p><code>ecosystem.config.js</code> 配置如下，</p><pre><code>module.exports = {
+  apps : [{
+    disable_logs: true
+  }]
+}</code></pre><h4 id="对于集群日志，默认是各个进程是分开的日志，是否合并为一个日志文件？---merge-logs">对于集群日志，默认是各个进程是分开的日志，是否合并为一个日志文件？ --merge-logs</h4><p><code>cli</code>命令模式，</p><pre><code> pm2 start server --merge-logs</code></pre><p><code>ecosystem.config.js</code> 配置如下，</p><pre><code>module.exports = {
+  apps : [{
+    merge_logs: true
+  }]
+}</code></pre><h2 id="pm2-常用命令详述">PM2 常用命令详述</h2><p>Demo 目录结构如下，</p><pre><code>│  ecosystem.config.js  // pm2 生态系统文件
+│
+├─app
+│   index.js   // 应用 app
+│
+└─server
+    index.js   // 应用 server</code></pre><p>如果想查看各个文件的内容，参看 附录1、附录2、附录3。</p><h3 id="查看进程列表-pm2-list">查看进程列表 pm2 list</h3><h4 id="查看所有进程列表-pm2-list">查看所有进程列表 pm2 list</h4><p>进程列表基本上会在每一次 pm2 操作后显示。</p><pre><code>e:\workplace&gt;pm2 list
+┌────────────┬────┬─────────┬──────┬───────┬────────┬─────────┬────────┬─────┬───────────┬──────────┬──────────┐
+│ App name   │ id │ version │ mode │ pid   │ status │ restart │ uptime │ cpu │ mem       │ user     │ watching │
+├────────────┼────┼─────────┼──────┼───────┼────────┼─────────┼────────┼─────┼───────────┼──────────┼──────────┤
+│ server_pre │ 1  │ 1.0.0   │ fork │ 17504 │ online │ 0       │ 4h     │ 0%  │ 16.5 MB   │ somebody │ disabled │
+└────────────┴────┴─────────┴──────┴───────┴────────┴─────────┴────────┴─────┴───────────┴──────────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><h3 id="启动服务-pm2-start">启动服务 pm2 start</h3><h4 id="启动单个应用：pm2-start-app">启动单个应用：pm2 start app</h4><p>应用名称自动填充为 <code>app</code>， 进程状态 <code>online</code>，默认不监听文件变更， <code>watching</code> 为 <code>disabled</code></p><pre><code>e:\pm2&gt;pm2 start app
+[PM2] Starting e:\pm2\app in fork_mode (1 instance)
+[PM2] Done.
+┌──────────┬────┬─────────┬──────┬───────┬────────┬─────────┬────────┬─────┬───────────┬──────────┬──────────┐
+│ App name │ id │ version │ mode │ pid   │ status │ restart │ uptime │ cpu │ mem       │ user     │ watching │
+├──────────┼────┼─────────┼──────┼───────┼────────┼─────────┼────────┼─────┼───────────┼──────────┼──────────┤
+│ app      │ 0  │ 1.0.0   │ fork │ 23284 │ online │ 0       │ 0s     │ 0%  │ 30.9 MB   │ somebody │ disabled │
+└──────────┴────┴─────────┴──────┴───────┴────────┴─────────┴────────┴─────┴───────────┴──────────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><h4 id="启动单个应用并监听代码变化：pm2-start-app---watch">启动单个应用并监听代码变化：pm2 start app --watch</h4><p>可以看到 <code>watching</code> 选项值为 <code>enabled</code>，此时，代码文件变化，会触发服务自动重启。</p><pre><code>e:\pm2&gt;pm2 start app --watch
+[PM2] Starting e:\pm2\app in fork_mode (1 instance)
+[PM2] Done.
+┌──────────┬────┬─────────┬──────┬───────┬────────┬─────────┬────────┬─────┬───────────┬──────────┬──────────┐
+│ App name │ id │ version │ mode │ pid   │ status │ restart │ uptime │ cpu │ mem       │ user     │ watching │
+├──────────┼────┼─────────┼──────┼───────┼────────┼─────────┼────────┼─────┼───────────┼──────────┼──────────┤
+│ app      │ 0  │ 1.0.0   │ fork │ 14288 │ online │ 0       │ 0s     │ 0%  │ 31.1 MB   │ somebody │ enabled  │
+└──────────┴────┴─────────┴──────┴───────┴────────┴─────────┴────────┴─────┴───────────┴──────────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><h4 id="启动单个应用并自定义应用名称：pm2-start---name-server_pre">启动单个应用并自定义应用名称：pm2 start --name server_pre</h4><p>如下运行所示，新增了名为 <code>server_pre</code> 的进程服务</p><pre><code>e:\pm2&gt;pm2 start server --name server_pre
+[PM2] Starting e:\pm2\server in fork_mode (1 instance)
+[PM2] Done.
+┌────────────┬────┬─────────┬──────┬───────┬────────┬─────────┬────────┬─────┬───────────┬──────────┬──────────┐
+│ App name   │ id │ version │ mode │ pid   │ status │ restart │ uptime │ cpu │ mem       │ user     │ watching │
+├────────────┼────┼─────────┼──────┼───────┼────────┼─────────┼────────┼─────┼───────────┼──────────┼──────────┤
+│ app        │ 0  │ 1.0.0   │ fork │ 14288 │ online │ 0       │ 74s    │ 0%  │ 27.6 MB   │ somebody │ enabled  │
+│ server_pre │ 1  │ 1.0.0   │ fork │ 17504 │ online │ 0       │ 0s     │ 0%  │ 31.1 MB   │ somebody │ disabled │
+└────────────┴────┴─────────┴──────┴───────┴────────┴─────────┴────────┴─────┴───────────┴──────────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><h4 id="重启单个应用，更新参数：-pm2-restart-app---update-env---watch-disabled">重启单个应用，更新参数： pm2 restart app --update-env --watch disabled</h4><p>重启应用需要更新参数，使用 <code>--update-env</code>， 第一个 app 应用 <code>watching</code> 参数已经从 <code>enabled</code> 状态变为 <code>disabled</code> 状态。参数 <code>restart</code> 表示自应用启动后，重启的次数</p><pre><code>e:\pm2&gt;pm2 restart app --update-env --watch disabled
+[PM2] Applying action restartProcessId on app [app](ids: 0)
+[PM2] [app](0) ✓
+┌────────────┬────┬─────────┬──────┬───────┬────────┬─────────┬────────┬─────┬───────────┬──────────┬──────────┐
+│ App name   │ id │ version │ mode │ pid   │ status │ restart │ uptime │ cpu │ mem       │ user     │ watching │
+├────────────┼────┼─────────┼──────┼───────┼────────┼─────────┼────────┼─────┼───────────┼──────────┼──────────┤
+│ app        │ 0  │ 1.0.0   │ fork │ 24256 │ online │ 4       │ 0s     │ 0%  │ 31.2 MB   │ somebody │ disabled │
+│ server_pre │ 1  │ 1.0.0   │ fork │ 17504 │ online │ 0       │ 8m     │ 0%  │ 27.0 MB   │ somebody │ disabled │
+└────────────┴────┴─────────┴──────┴───────┴────────┴─────────┴────────┴─────┴───────────┴──────────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><h4 id="启动应用，负载平衡：-pm2-start-app--i-max">启动应用，负载平衡： pm2 start app -i max</h4><p>参数 <code>-i max</code> 表示启动当前系统 CPU 数量的进程数，其中 <code>max</code> 可替换为具体数字，如 <code>3</code>、 <code>-1</code>，甚至大于 <code>max</code> 的数字。数字是多少，启动的进程数就是多少。仔细观察 <code>mode</code> 一栏，通过这种方式启动的进程都是 <code>cluster</code>，集群模式。</p><pre><code>e:\pm2&gt;pm2 start app -i max
+[PM2] Starting e:\pm2\app in cluster_mode (0 instance)
+[PM2] Done.
+┌────────────┬────┬─────────┬─────────┬───────┬────────┬─────────┬────────┬───────┬───────────┬──────────┬────────
+──┐
+│ App name   │ id │ version │ mode    │ pid   │ status │ restart │ uptime │ cpu   │ mem       │ user     │ watching │
+├────────────┼────┼─────────┼─────────┼───────┼────────┼─────────┼────────┼───────┼───────────┼──────────┼────────
+──┤
+│ app        │ 2  │ 1.0.0   │ cluster │ 25892 │ online │ 0       │ 1s     │ 0%    │ 34.6 MB   │ somebody │ disabled │
+│ app        │ 3  │ 1.0.0   │ cluster │ 19520 │ online │ 0       │ 1s     │ 0%    │ 34.8 MB   │ somebody │ disabled │
+│ app        │ 4  │ 1.0.0   │ cluster │ 26428 │ online │ 0       │ 1s     │ 0%    │ 34.8 MB   │ somebody │ disabled │
+│ app        │ 5  │ 1.0.0   │ cluster │ 9480  │ online │ 0       │ 1s     │ 0%    │ 35.1 MB   │ somebody │ disabled │
+│ app        │ 6  │ 1.0.0   │ cluster │ 4180  │ online │ 0       │ 1s     │ 0%    │ 34.8 MB   │ somebody │ disabled │
+│ app        │ 7  │ 1.0.0   │ cluster │ 16456 │ online │ 0       │ 0s     │ 0%    │ 34.9 MB   │ somebody │ disabled │
+│ app        │ 8  │ 1.0.0   │ cluster │ 21960 │ online │ 0       │ 0s     │ 10.9% │ 34.9 MB   │ somebody │ disabled │
+│ app        │ 9  │ 1.0.0   │ cluster │ 26904 │ online │ 0       │ 0s     │ 25%   │ 34.3 MB   │ somebody │ disabled │
+│ server_pre │ 1  │ 1.0.0   │ fork    │ 17504 │ online │ 0       │ 17m    │ 0%    │ 27.0 MB   │ somebody │ disabled │
+└────────────┴────┴─────────┴─────────┴───────┴────────┴─────────┴────────┴───────┴───────────┴──────────┴────────
+──┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><p><strong>根据自己对电脑的感觉，应该差不多 4 个才对，怎么出现了 8 个相同的进程？这个数字怎么来的？</strong></p><p>先看看系统信息，</p><pre><code>e:\workplace&gt;systeminfo
+
+主机名:           ******
+OS 名称:          Microsoft Windows 7 专业版
+OS 版本:          6.1.7601 Service Pack 1 Build 7601
+OS 制造商:        Microsoft Corporation
+OS 配置:          ******
+OS 构件类型:      Multiprocessor Free
+注册的所有人:     ******
+注册的组织:       ******
+产品 ID:         ******-******-******-******
+初始安装日期:     ****/2/21, 12:46:21
+系统启动时间:     ****/2/21, 18:29:48
+系统制造商:       LENOVO
+系统型号:         ThinkCentre M8500t-N000
+系统类型:         x64-based PC
+处理器:           安装了 1 个处理器。
+                  [01]: Intel64 Family 6 Model 60 Stepping 3 GenuineIntel ~3601 Mhz
+BIOS 版本:        LENOVO FBKTC1AUS, ****/2/16
+......</code></pre><p>只有一个处理器，嗯... 不像，再看 CPU 信息，
+<code>numberofcores = 4</code> 表示系统 CPU 为四核；<code>NumberOfLogicalProcessors = 8</code>，表示 CPU 线程数为 8，系统使用了超线程技术。由此可推测， <code>pm2 start app -i max</code> 中， <code>max</code>是指系统 CPU 最终的可执行的线程数决定。</p><pre><code>e:\workplace&gt;wmic
+wmic:root\cli&gt;cpu get numberofcores
+NumberOfCores
+4
+
+wmic:root\cli&gt;cpu get NumberOfLogicalProcessors
+NumberOfLogicalProcessors
+8</code></pre><h4 id="0-秒停机重载所有进程-pm2-reload-all">0 秒停机重载所有进程 pm2 reload all</h4><p>用于集群进程，即 pm2 start -i <code>n</code>，重载所有进程，但过程中始终保持一个进程在正常运行。看运行结果<code>[app](0)</code>，其中 <code>app</code> 是进程名称， <code>0</code>是进程 id。<code>reload</code> 也会使用进程列表中的 <code>restart</code> 数值加1。</p><pre><code>e:\pm2&gt;pm2 reload all
+Use --update-env to update environment variables
+[PM2] Applying action reloadProcessId on app [all](ids: 0,2,3)
+[PM2] [app](0) ✓
+[PM2] [app](2) ✓
+[PM2] [server_pre](3) ✓</code></pre><h4 id="0-秒停机重载某一集群进程-pm2-reload-app">0 秒停机重载某一集群进程 pm2 reload app</h4><p>系统有两个应用，app 和 server，但只重载了 app 应用的所有进程。</p><pre><code>e:\pm2&gt;pm2 reload app
+Use --update-env to update environment variables
+[PM2] Applying action reloadProcessId on app [app](ids: 0,2)
+[PM2] [app](0) ✓
+[PM2] [app](2) ✓</code></pre><h3 id="删除进程-pm2-delete">删除进程 pm2 delete</h3><h4 id="根据名称删除应用进程-pm2-delete-app">根据名称删除应用进程 pm2 delete app</h4><p>先使用 <code>pm2 start app -i 3</code> 创建三个相同的 app 进程，然后使用 <code>pm2 delete app</code>，观察输出结果。会显示删除的 App id。</p><pre><code>e:\pm2&gt;pm2 delete app
+[PM2] Applying action deleteProcessId on app [app](ids: 57,58,59)
+[PM2] [app](57) ✓
+[PM2] [app](58) ✓
+[PM2] [app](59) ✓
+┌────────────┬────┬─────────┬──────┬───────┬────────┬─────────┬────────┬─────┬───────────┬──────────┬──────────┐
+│ App name   │ id │ version │ mode │ pid   │ status │ restart │ uptime │ cpu │ mem       │ user     │ watching │
+├────────────┼────┼─────────┼──────┼───────┼────────┼─────────┼────────┼─────┼───────────┼──────────┼──────────┤
+│ server_pre │ 1  │ 1.0.0   │ fork │ 17504 │ online │ 0       │ 4h     │ 0%  │ 17.0 MB   │ somebody │ disabled │
+└────────────┴────┴─────────┴──────┴───────┴────────┴─────────┴────────┴─────┴───────────┴──────────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><h4 id="删除所有应用进程-pm2-delete-all">删除所有应用进程 pm2 delete all</h4><pre><code>e:\pm2&gt;pm2 delete all
+[PM2] Applying action deleteProcessId on app [all](ids: 1,60,61,62)
+[PM2] [server_pre](1) ✓
+[PM2] [app](61) ✓
+[PM2] [app](60) ✓
+[PM2] [app](62) ✓
+┌──────────┬────┬─────────┬──────┬─────┬────────┬─────────┬────────┬─────┬─────┬──────┬──────────┐
+│ App name │ id │ version │ mode │ pid │ status │ restart │ uptime │ cpu │ mem │ user │ watching │
+└──────────┴────┴─────────┴──────┴─────┴────────┴─────────┴────────┴─────┴─────┴──────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><h4 id="根据-id-删除应用进程-pm2-delete-0">根据 id 删除应用进程 pm2 delete 0</h4><p>重新创建全新的 pm2 进程，然后删除具体某一个 id 进程。 根据名称会删除所有进程，但是根据 id 只会删除其中一个。名称相同， id 不同的进程一般属于一个集群。</p><pre><code>e:\pm2&gt;pm2 start app -i 3
+[PM2] Starting e:\pm2\app in cluster_mode (3 instances)
+[PM2] Done.
+┌──────────┬────┬─────────┬─────────┬───────┬────────┬─────────┬────────┬─────┬───────────┬──────────┬──────────┐
+│ App name │ id │ version │ mode    │ pid   │ status │ restart │ uptime │ cpu │ mem       │ user     │ watching │
+├──────────┼────┼─────────┼─────────┼───────┼────────┼─────────┼────────┼─────┼───────────┼──────────┼──────────┤
+│ app      │ 0  │ 1.0.0   │ cluster │ 19600 │ online │ 0       │ 0s     │ 0%  │ 34.8 MB   │ somebody │ disabled │
+│ app      │ 1  │ 1.0.0   │ cluster │ 27652 │ online │ 0       │ 0s     │ 0%  │ 34.6 MB   │ somebody │ disabled │
+│ app      │ 2  │ 1.0.0   │ cluster │ 27792 │ online │ 0       │ 0s     │ 0%  │ 34.8 MB   │ somebody │ disabled │
+└──────────┴────┴─────────┴─────────┴───────┴────────┴─────────┴────────┴─────┴───────────┴──────────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app
+
+e:\pm2&gt;pm2 delete 1
+[PM2] Applying action deleteProcessId on app [1](ids: 1)
+[PM2] [app](1) ✓
+┌──────────┬────┬─────────┬─────────┬───────┬────────┬─────────┬────────┬─────┬───────────┬──────────┬──────────┐
+│ App name │ id │ version │ mode    │ pid   │ status │ restart │ uptime │ cpu │ mem       │ user     │ watching │
+├──────────┼────┼─────────┼─────────┼───────┼────────┼─────────┼────────┼─────┼───────────┼──────────┼──────────┤
+│ app      │ 0  │ 1.0.0   │ cluster │ 19600 │ online │ 0       │ 15s    │ 0%  │ 34.9 MB   │ somebody │ disabled │
+│ app      │ 2  │ 1.0.0   │ cluster │ 27792 │ online │ 0       │ 14s    │ 0%  │ 34.8 MB   │ somebody │ disabled │
+└──────────┴────┴─────────┴─────────┴───────┴────────┴─────────┴────────┴─────┴───────────┴──────────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><h3 id="停止进程-pm2-stop">停止进程 pm2 stop</h3><h4 id="停止所有进程-pm2-stop-all">停止所有进程 pm2 stop all</h4><pre><code>e:\workplace&gt;pm2 stop all
+[PM2] Applying action stopProcessId on app [all](ids: 0,2,3)
+[PM2] [app](0) ✓
+[PM2] [app](2) ✓
+[PM2] [server_pre](3) ✓
+┌────────────┬────┬─────────┬─────────┬─────┬─────────┬─────────┬────────┬─────┬────────┬──────────┬──────────┐
+│ App name   │ id │ version │ mode    │ pid │ status  │ restart │ uptime │ cpu │ mem    │ user     │ watching │
+├────────────┼────┼─────────┼─────────┼─────┼─────────┼─────────┼────────┼─────┼────────┼──────────┼──────────┤
+│ app        │ 0  │ 1.0.0   │ cluster │ 0   │ stopped │ 3       │ 0      │ 0%  │ 0 B    │ somebody │ disabled │
+│ app        │ 2  │ 1.0.0   │ cluster │ 0   │ stopped │ 3       │ 0      │ 0%  │ 0 B    │ somebody │ disabled │
+│ server_pre │ 3  │ 1.0.0   │ fork    │ 0   │ stopped │ 1       │ 0      │ 0%  │ 0 B    │ somebody │ disabled │
+└────────────┴────┴─────────┴─────────┴─────┴─────────┴─────────┴────────┴─────┴────────┴──────────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><h4 id="根据名称停止某一进程-pm2-stop-app">根据名称停止某一进程 pm2 stop app</h4><p>名称为 app 的两个进程都被 stopped 了</p><pre><code>e:\workplace&gt;pm2 stop app
+[PM2] Applying action stopProcessId on app [app](ids: 0,2)
+[PM2] [app](0) ✓
+[PM2] [app](2) ✓
+┌────────────┬────┬─────────┬─────────┬───────┬─────────┬─────────┬────────┬─────┬───────────┬──────────┬──────────┐
+
+│ App name   │ id │ version │ mode    │ pid   │ status  │ restart │ uptime │ cpu │ mem       │ user     │ watching │
+├────────────┼────┼─────────┼─────────┼───────┼─────────┼─────────┼────────┼─────┼───────────┼──────────┼──────────┤
+
+│ app        │ 0  │ 1.0.0   │ cluster │ 0     │ stopped │ 3       │ 0      │ 0%  │ 0 B       │ somebody │ disabled │
+│ app        │ 2  │ 1.0.0   │ cluster │ 0     │ stopped │ 3       │ 0      │ 0%  │ 0 B       │ somebody │ disabled │
+│ server_pre │ 3  │ 1.0.0   │ fork    │ 11940 │ online  │ 1       │ 12s    │ 0%  │ 31.3 MB   │ somebody │ disabled │
+└────────────┴────┴─────────┴─────────┴───────┴─────────┴─────────┴────────┴─────┴───────────┴──────────┴──────────┘
+
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><h4 id="根据-id-停止某一进程-pm2-stop-3">根据 id 停止某一进程 pm2 stop 3</h4><p>只有 <code>server_pre</code> 的状态 status 已变为 <code>stopped</code></p><pre><code>e:\workplace&gt;pm2 stop 3
+[PM2] Applying action stopProcessId on app [3](ids: 3)
+[PM2] [server_pre](3) ✓
+┌────────────┬────┬─────────┬─────────┬───────┬─────────┬─────────┬────────┬─────┬───────────┬──────────┬──────────┐
+
+│ App name   │ id │ version │ mode    │ pid   │ status  │ restart │ uptime │ cpu │ mem       │ user     │ watching │
+├────────────┼────┼─────────┼─────────┼───────┼─────────┼─────────┼────────┼─────┼───────────┼──────────┼──────────┤
+
+│ app        │ 0  │ 1.0.0   │ cluster │ 23856 │ online  │ 3       │ 8m     │ 0%  │ 29.2 MB   │ somebody │ disabled │
+│ app        │ 2  │ 1.0.0   │ cluster │ 28412 │ online  │ 3       │ 8m     │ 0%  │ 28.7 MB   │ somebody │ disabled │
+│ server_pre │ 3  │ 1.0.0   │ fork    │ 0     │ stopped │ 1       │ 0      │ 0%  │ 0 B       │ somebody │ disabled │
+└────────────┴────┴─────────┴─────────┴───────┴─────────┴─────────┴────────┴─────┴───────────┴──────────┴──────────┘
+
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app</code></pre><h3 id="进程信息查看">进程信息查看</h3><h4 id="查看单个进程详细信息">查看单个进程详细信息</h4><p><code>pm2 show &lt;name|id&gt;</code>，包含：名称、版本、重启次数、脚本路径、端口号、日志路径、环境变量、创建时间、git 相关信息等。</p><pre><code>e:\workplace\yaoyanhuo&gt;pm2 show 0
+ Describing process with id 0 - name bcontent 
+┌───────────────────┬───────────────────────────────────────────────────────┐
+│ status            │ online                                                │
+│ name              │ bcontent                                              │
+│ version           │ 1.0.0                                                 │
+│ restarts          │ 1                                                     │
+│ uptime            │ 23h                                                   │
+│ script path       │ e:\webtorm_workplace\landing-page\dev\server\index.js │
+│ script args       │ 10001                                                 │
+│ error log path    │ C:\Users\somebody\.pm2\logs\bcontent-error-0.log      │
+│ out log path      │ C:\Users\somebody\.pm2\logs\bcontent-out-0.log        │
+│ pid path          │ C:\Users\somebody\.pm2\pids\bcontent-0.pid            │
+│ interpreter       │ node                                                  │
+│ interpreter args  │ N/A                                                   │
+│ script id         │ 0                                                     │
+│ exec cwd          │ e:\webtorm_workplace\landing-page\dev\build           │
+│ exec mode         │ cluster_mode                                          │
+│ node.js version   │ 10.15.1                                               │
+│ node env          │ production                                            │
+│ watch &amp; reload    │ ✘                                                     │
+│ unstable restarts │ 0                                                     │
+│ created at        │ 2019-02-28T07:21:26.068Z                              │
+└───────────────────┴───────────────────────────────────────────────────────┘
+ Revision control metadata 
+┌──────────────────┬──────────────────────────────────────────────────────────┐
+│ revision control │ git                                                      │
+│ remote url       │ http://git.code.oa.com/business_content/landing-page.git │
+│ repository root  │ e:\webtorm_workplace\landing-page                        │
+│ last update      │ 2019-02-28T07:21:26.651Z                                 │
+│ revision         │ 61f60121fbca3d7bbd6872caa2f094fa44ed5a33                 │
+│ comment          │ add pre bash                                             │
+│ branch           │ master                                                   │
+└──────────────────┴──────────────────────────────────────────────────────────┘
+ Code metrics value 
+┌────────────────────┬──────────┐
+│ Event Loop Latency │ 306.55ms │
+│ Active handles     │ 2        │
+└────────────────────┴──────────┘
+ Add your own code metrics: http://bit.ly/code-metrics
+ Use `pm2 logs bcontent [--lines 1000]` to display logs
+ Use `pm2 env 0` to display environement variables
+ Use `pm2 monit` to monitor CPU and Memory usage bcontent</code></pre><h4 id="进程监视-pm2-monit">进程监视 pm2 monit</h4><p>查看进程 CPU 运行情况</p><h3 id="日志管理">日志管理</h3><ul><li>日志会打印 node 服务中的所有 <code>console</code>，无论是启动服务中的，还是网络请求中的。</li><li>日志分类存储，错误日志和普通日志分开存储，不同进程服务不同的日志文件，同一进程集群，也会因进程 id 不同而分开存储日志。</li><li>日志文件一旦创建，无论执行 <code>restart</code><code>start</code> 还是 <code>delete</code> 命令，过往日志都不会被删除和清空。</li></ul><h4 id="查看所有进程日志-pm2-logs">查看所有进程日志 pm2 logs</h4><p>日志路径会在命令执行后输出到控制台，并且可以看到是分文件输出，且仅显示最新的 log。进入具体日志路径 <code>C:\Users\somebody\.pm2\logs\server-pre-out.log</code> 查看完整日志。</p><pre><code>e:\pm2&gt;pm2 logs
+[TAILING] Tailing last 15 lines for [all] processes (change the value with --lines option)
+C:\Users\somebody\.pm2\pm2.log last 15 lines:
+PM2        | 2019-02-27T23:03:59: PM2 log: App name:app id:0 disconnected
+PM2        | 2019-02-27T23:03:59: PM2 log: App [app:0] exited with code [1] via signal [SIGINT]
+PM2        | 2019-02-27T23:03:59: PM2 log: App name:app id:2 disconnected
+PM2        | 2019-02-27T23:03:59: PM2 log: App [app:2] exited with code [1] via signal [SIGINT]
+PM2        | 2019-02-27T23:03:59: PM2 log: pid=17860 msg=process killed
+PM2        | 2019-02-27T23:03:59: PM2 log: App [app:0] starting in -cluster mode-
+PM2        | 2019-02-27T23:03:59: PM2 log: pid=28304 msg=process killed
+PM2        | 2019-02-27T23:03:59: PM2 log: App [app:2] starting in -cluster mode-
+PM2        | 2019-02-27T23:03:59: PM2 log: App [app:0] online
+PM2        | 2019-02-27T23:03:59: PM2 log: Stopping app:server_pre id:3
+PM2        | 2019-02-27T23:03:59: PM2 log: App [app:2] online
+PM2        | 2019-02-27T23:03:59: PM2 log: App [server_pre:3] exited with code [1] via signal [SIGINT]
+PM2        | 2019-02-27T23:03:59: PM2 log: pid=14312 msg=process killed
+PM2        | 2019-02-27T23:03:59: PM2 log: App [server_pre:3] starting in -fork mode-
+PM2        | 2019-02-27T23:03:59: PM2 log: App [server_pre:3] online
+
+C:\Users\somebody\.pm2\logs\server-pre-error.log last 15 lines:
+C:\Users\somebody\.pm2\logs\app-error-0.log last 15 lines:
+C:\Users\somebody\.pm2\logs\app-error-2.log last 15 lines:
+C:\Users\somebody\.pm2\logs\app-out-2.log last 15 lines:
+2|app      | hello app...
+2|app      | undefined
+2|app      | app is listening at localhost:3001
+2|app      | hello app...
+2|app      | undefined
+2|app      | app is listening at localhost:3001
+2|app      | hello app...
+2|app      | undefined
+2|app      | app is listening at localhost:3001
+2|app      | hello app...
+2|app      | undefined
+2|app      | app is listening at localhost:3001
+2|app      | hello app...
+2|app      | undefined
+2|app      | app is listening at localhost:3001
+
+C:\Users\somebody\.pm2\logs\app-out-0.log last 15 lines:
+0|app      | hello app...
+0|app      | undefined
+0|app      | app is listening at localhost:3001
+0|app      | hello app...
+0|app      | undefined
+0|app      | app is listening at localhost:3001
+0|app      | hello app...
+0|app      | undefined
+0|app      | app is listening at localhost:3001
+0|app      | hello app...
+0|app      | undefined
+0|app      | app is listening at localhost:3001
+0|app      | hello app...
+0|app      | undefined
+0|app      | app is listening at localhost:3001
+
+C:\Users\somebody\.pm2\logs\server-pre-out.log last 15 lines:
+3|server_p | hello server...
+3|server_p | undefined
+3|server_p | app is listening at localhost:3002
+3|server_p | hello server...
+3|server_p | undefined
+3|server_p | app is listening at localhost:3002
+3|server_p | request once refresh
+3|server_p | hello server...
+3|server_p | undefined
+3|server_p | app is listening at localhost:3002
+3|server_p | request once refresh
+3|server_p | request once refresh
+3|server_p | hello server...
+3|server_p | undefined
+3|server_p | app is listening at localhost:3002</code></pre><h4 id="查看具体应用日志-pm2-logs-app">查看具体应用日志 pm2 logs app</h4><p>如下，<code>request once refresh</code> 是在网络请求代码请求中输出的。 <code>hello server</code> 则是应用启动 log，每次应用启动或更新时会打印。</p><pre><code>e:\workplace&gt;pm2 logs server_pre
+[TAILING] Tailing last 15 lines for [server_pre] process (change the value with --lines option)
+C:\Users\somebody\.pm2\logs\server-pre-error.log last 15 lines:
+C:\Users\somebody\.pm2\logs\server-pre-out.log last 15 lines:
+3|server_p | hello server...
+3|server_p | undefined
+3|server_p | app is listening at localhost:3002
+3|server_p | hello server...
+3|server_p | undefined
+3|server_p | app is listening at localhost:3002
+3|server_p | hello server...
+3|server_p | undefined
+3|server_p | app is listening at localhost:3002
+3|server_p | request once refresh</code></pre><h4 id="清除日志-pm2-flush">清除日志 pm2 flush</h4><p>清除进程列表<code>pm2 list</code>中的所有进程应用日志，无论其状态为 <code>online</code> 还是 <code>stopped</code>。但不在进程列表中的死进程，其日志不会被清除，如：执行了 <code>pm2 delete app</code> 的 app 进程。清除操作仅仅是清空文件，不会删除文件。</p><p>如下执行结果所示，<code>sopped</code> 状态的 <code>server</code> 和 <code>online</code> 状态的 <code>bcontent</code> 日志都被清除了。</p><pre><code>e:\pm2&gt;pm2 stop server
+[PM2] Applying action stopProcessId on app [server](ids: 1)
+[PM2] [server](1) ✓
+┌──────────┬────┬─────────┬──────┬───────┬─────────┬─────────┬────────┬─────┬───────────┬──────────┬──────────┐
+│ App name │ id │ version │ mode │ pid   │ status  │ restart │ uptime │ cpu │ mem       │ user     │ watching │
+├──────────┼────┼─────────┼──────┼───────┼─────────┼─────────┼────────┼─────┼───────────┼──────────┼──────────┤
+│ bcontent │ 0  │ 1.0.0   │ fork │ 10176 │ online  │ 0       │ 5m     │ 0%  │ 36.6 MB   │ somebody │ enabled  │
+│ server   │ 1  │ 1.0.0   │ fork │ 0     │ stopped │ 0       │ 0      │ 0%  │ 0 B       │ somebody │ disabled │
+└──────────┴────┴─────────┴──────┴───────┴─────────┴─────────┴────────┴─────┴───────────┴──────────┴──────────┘
+ Use `pm2 show <span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>id|name</span><span class="token punctuation">&gt;</span></span>` to get more details about an app
+
+e:\pm2&gt;pm2 flush
+[PM2] Flushing C:\Users\somebody\.pm2\pm2.log
+[PM2] Flushing:
+[PM2] C:\Users\somebody\.pm2\logs\bcontent-out-0.log
+[PM2] C:\Users\somebody\.pm2\logs\bcontent-error-0.log
+[PM2] Flushing:
+[PM2] C:\Users\somebody\.pm2\logs\server-out.log
+[PM2] C:\Users\somebody\.pm2\logs\server-error.log
+[PM2] Logs flushed</code></pre><h3 id="启动挂钩">启动挂钩</h3><ul><li>启动挂钩是为了保存进程列表，在计算机重启或出现意外时将其恢复。</li><li>每个操作系统都有一个特定的工具来处理启动挂钩：pm2提供了一种简单的方法来生成和配置它们。</li></ul><h4 id="检测可用的-init-系统并生成配置-pm2-startup">检测可用的 init 系统并生成配置 pm2 startup</h4><p>这是一台 linux 系统执行结果，</p><pre><code>ubuntu@VM-16-2-ubuntu:~$ pm2 startup
+[PM2] Init System found: systemd
+[PM2] To setup the Startup Script, copy/paste the following command:
+sudo env PATH=$PATH:/home/ubuntu/.nvm/versions/node/v10.15.1/bin /home/ubuntu/.nvm/versions/node/v10.15.1/lib/node_modules/pm2/bin/pm2 startup systemd -u ubuntu --hp /home/ubuntu</code></pre><p>这是本地 windows 执行结果，啥都没有。</p><pre><code>e:\workplace\yaoyanhuo&gt;pm2 startup
+[PM2][ERROR] Init system not found
+D:\Program Files\nodejs\node_modules\@tencent\pm2\lib\API\Startup.js:201
+      throw new Error('Init system not found');
+      ^
+
+Error: Init system not found
+    at API.CLI.startup (D:\Program Files\nodejs\node_modules\@tencent\pm2\lib\API\Startup.js:201:13)
+    at Command.<span class="token tag"><span class="token tag"><span class="token punctuation">&lt;</span>anonymous</span><span class="token punctuation">&gt;</span></span> (D:\Program Files\nodejs\node_modules\@tencent\pm2\bin\pm2:736:9)
+    at Command.listener (D:\Program Files\nodejs\node_modules\@tencent\pm2\node_modules\commander\index.js:315:8)
+    at Command.emit (events.js:189:13)
+    at Command.parseArgs (D:\Program Files\nodejs\node_modules\@tencent\pm2\node_modules\commander\index.js:651:12)
+    at Command.parse (D:\Program Files\nodejs\node_modules\@tencent\pm2\node_modules\commander\index.js:474:21)
+    at Timeout._onTimeout (D:\Program Files\nodejs\node_modules\@tencent\pm2\bin\pm2:204:15)
+    at ontimeout (timers.js:436:11)
+    at tryOnTimeout (timers.js:300:5)
+    at listOnTimeout (timers.js:263:5)</code></pre><h2 id="附录1-appindexjs">附录1 app/index.js</h2><pre><code>const express = require('express')
+const app = express()
+const port = process.argv[2] || 3001
+
+console.log('hello app...')
+console.log(process.env.NODE_ENV)
+
+app.get('/', function (req, res) {
+  res.json({data: 'hello app'})
+})
+app.listen(port, () =&gt; console.log(`app is listening at localhost:${port}`))
+</code></pre><h2 id="附录2-serverindexjs">附录2 server/index.js</h2><pre><code>const express = require('express')
+const app = express()
+const port = process.argv[2] || 3002
+
+console.log('hello server...')
+console.log(process.env.NODE_ENV)
+
+app.get('/', function (req, res) {
+  console.log('request once refresh')
+  res.json({greeting: 'hello server'})
+})
+app.listen(port, () =&gt; console.log(`app is listening at localhost:${port}`))
+</code></pre><h2 id="附录3-ecosystemconfigjs">附录3 ecosystem.config.js</h2><pre><code>module.exports = {
+  apps : [{
+    name: 'app',
+    script: 'app/index.js',
+    args: '3306',
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      NODE_ENV: 'development'
+    },
+    env_production: {
+      NODE_ENV: 'production'
+    }
+  },{
+    name: 'server',
+    script: 'server/index.js',
+    args: '1001',
+    instances: 3,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      NODE_ENV: 'development'
+    },
+    env_production: {
+      NODE_ENV: 'production'
+    }
+  }]
+}</code></pre><h2 id="附录4-参考地址">附录4 参考地址</h2><ul><li>pm2 从入门到精通：<a href="https://www.kancloud.cn/daiji/pm2/395334">https://www.kancloud.cn/daiji/pm2/395334</a></li><li>官网：<a href="https://pm2.io/doc/en/runtime/quick-start/">https://pm2.io/doc/en/runtime/quick-start/</a></li><li>中文：<a href="https://pm2.io/doc/zh/runtime/quick-start/">https://pm2.io/doc/zh/runtime/quick-start/</a></li></ul></div></div></div></div><footer>
+  .沪ICP备19007658号. <a href="http://www.yaoyanhuo.com">www.yaoyanhuo.com</a>  . Connect me by email yaoyanhuoyi@qq.com
+</footer></div><script src="/js/chunk-vendors.e863a954.js"></script><script src="/js/app.b91e7a8f.js"></script></body></html>
