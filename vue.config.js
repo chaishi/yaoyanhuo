@@ -1,8 +1,6 @@
 const path = require('path')
-// const webpack = require('webpack')
 const PrerenderSPAPlugin = require('prerender-spa-plugin')
 const Renderer = PrerenderSPAPlugin.PuppeteerRenderer
-// const MarkdownLoader = require('./markdonw.loader')
 
 module.exports = {
   css: {
@@ -33,7 +31,21 @@ module.exports = {
     if (process.env.NODE_ENV === 'production') {
       let preRender =  new PrerenderSPAPlugin({
         staticDir: path.join(__dirname, 'dist'),
-        routes: [ '/', '/blog/site_isolate_process', '/blog/axios_cross_origin', '/blog/element_in_vision', '/blog/corb', '/blog/vue_jsx_on_syntax_conflict', '/blog/pm2', '/blog/interrupt', '/blog/processor_status', '/blog/unix_linux', '/blog/http20180306', '/blog/nvm20190201', '/blog/nginx_error' ],
+        routes: [
+          '/',
+          '/blog/site_isolate_process',
+          '/blog/axios_cross_origin',
+          '/blog/element_in_vision',
+          '/blog/corb',
+          '/blog/vue_jsx_on_syntax_conflict',
+          '/blog/pm2',
+          '/blog/interrupt',
+          '/blog/processor_status',
+          '/blog/unix_linux',
+          '/blog/http20180306',
+          '/blog/nvm20190201',
+          '/blog/nginx_error'
+        ],
         renderer: new Renderer({
           inject: {
             TITLE: '妖艳货'
