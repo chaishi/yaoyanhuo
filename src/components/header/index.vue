@@ -5,8 +5,8 @@
         <img src="/img/head.jpg">
       </router-link>
       <div class="info">
-        <h1 class="name">Yaoyanhuo 妖艳货</h1>
-        <span>Be a simple programmer. </span>
+        <h1 class="name">妖艳货的个人空间</h1>
+        <span> Be a simple programmer </span>
       </div>
     </div>
   </div>
